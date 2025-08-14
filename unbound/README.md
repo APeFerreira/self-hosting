@@ -4,6 +4,7 @@
 
 - [ ] Check config file
 - [ ] Build `docker-compose.yml`
+- [ ] Mount config file instead of pasting its content
 
 ## Instructions
 
@@ -88,3 +89,4 @@ First find the Pi's IP and then
 nslookup youtube.com 192.168.15.182
 
 ```
+
