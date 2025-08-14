@@ -1,0 +1,33 @@
+# More info at https://github.com/pi-hole/docker-pi-hole/ and https://docs.pi-hole.net/
+services:
+  pihole:
+    container_name: my_pihole
+    image: pihole/pihole:latest
+    ports:
+      # DNS Ports
+      - "53:53/tcp"
+      - "53:53/udp"
+      # Default HTTP Port
+      - "80:80"
+      # Default HTTPs Port. FTL will generate a self-signed certificate
+      - "443:443"
+    environment:
+      # Set the appropriate timezone for your location from
+      # https://en.wikipedia.org/wiki/List_of_tz_database_time_zones, e.g:
+      TZ: 
+      # Set a password to access the web interface. Not setting one will result in a random password being assigned
+      FTLCONF_webserver_api_password: ''
+      # Uncomment next line only if you don’t plan to edit upstreams in the UI
+      # FTLCONF_dns_upstreams: '172.17.0.1#5353'
+      DNSMASQ_LISTENING: all          # v6 shorthand
+    # Volumes store your data between container upgrades
+    # **Do not mount resolv.conf**
+    volumes:
+    # For persisting Pi-hole's databases and common configuration file
+      - '~/projects/pihole/etc-pihole:/etc/pihole'
+    dns:                              # tell Docker how the container itself resolves
+      - 1.1.1.1
+      - 8.8.8.8
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
