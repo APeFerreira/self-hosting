@@ -1,58 +1,26 @@
 # Unbound
 
-## TODO
-
-- [ ] Check config file
 
 ## Instructions
 
-### Pull image
-
-```bash
-docker pull alpinelinux/unbound:latest-armv7
-```
 
 ### Start container
 
 ```bash
-docker run --name=my_unbound \
---detach=true \
---publish=5353:5353/tcp \
---publish=5353:5353/udp \
---restart=unless-stopped \
-alpinelinux/unbound:latest-armv7
+docker compose up -d
 ```
-
-### Enter the container
-
-```bash
-docker exec -it my_unbound /bin/sh
-```
-
-### Install nano
-
-```bash
-apk update && apk add bind-tools nano
-```
-
-### Paste my config into `/etc/unbound/unbound.conf`
 
 
 ### Check if config file is ok
 
 ```bash
-unbound-checkconf
-```
-
-### Restart the container
-
-```bash
-docker restart my_unbound
+docker exec unbound unbound-checkconf
 ```
 
 ## Test
 
 You should look for `status: NOERROR` if successful.
+
 
 ### On container
 
