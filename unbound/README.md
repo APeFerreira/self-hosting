@@ -22,6 +22,14 @@ docker compose up -d
 docker exec unbound unbound-checkconf
 ```
 
+### Discover the container's IP
+
+This IP is used when pinging from inside other containers.
+
+```bash
+docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' unbound
+```
+
 ## Test
 
 You should look for `status: NOERROR` if successful.
