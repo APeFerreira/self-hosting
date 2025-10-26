@@ -8,7 +8,7 @@ If setting up a cloud server, follow this [guide](https://github.com/anbuchelva/
 
 ## Full vs. Split tunnel
 
-The default configuration (which is the recommended configuration) for all VPN profiles is Split Tunnel. If you wish to route all your traffic through the VPN (Full Tunnel), edit the **Allowed IPs** on your Client Profile on your device to read `0.0.0.0/0, ::/0`.
+The default configuration (which is the recommended configuration) for all VPN profiles is Split Tunnel. If you wish to route all your traffic through the VPN (Full Tunnel), edit the **Allowed IPs** on your Client Profile on your device to read `0.0.0.0/0, ::/0`. -> IN FACT IT'S MORE COMPLEX THAN THIS
 
 ## Update Host Names (Optional Step)
 
