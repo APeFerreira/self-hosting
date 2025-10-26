@@ -6,6 +6,8 @@ If setting up a local network server, follow Pi-hole's [documentation](https://d
 
 If setting up a cloud server, follow this [guide](https://github.com/anbuchelva/Pi-hole-and-Wireguard-on-Oracle-Cloud-always-free-tier) for installing Wireguard in an Oracle VM. Comment the lines related to Pi-hole installation if it's already installed.
 
+**DO NOT INSTALL WIREGUARD BY YOURSELF IF USING THE SCRIPT FROM THE GUIDE**
+
 ## Full vs. Split tunnel
 
 The default configuration (which is the recommended configuration) for all VPN profiles is Split Tunnel. If you wish to route all your traffic through the VPN (Full Tunnel), edit the **Allowed IPs** on your Client Profile on your device to read `0.0.0.0/0, ::/0`. -> IN FACT IT'S MORE COMPLEX THAN THIS
