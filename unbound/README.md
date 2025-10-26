@@ -3,6 +3,11 @@
 
 ## Instructions
 
+### Create network (if not created yet)
+
+```bash
+docker network create monitor-net
+```
 
 ### Start container
 
