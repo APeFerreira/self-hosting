@@ -25,7 +25,7 @@ You should look for `status: NOERROR` if successful.
 ### On container
 
 ```bash
-dig google.com ANY @127.0.0.1 -p 5353
+dig google.com ANY @127.0.0.1 -p 5335
 ```
 
 ### On host
@@ -44,7 +44,7 @@ And look for something like `inet 172.17.0.1/16`
 #### Test
 
 ```bash
-dig google.com ANY @172.17.0.1 -p 5353
+dig google.com ANY @172.17.0.1 -p 5335
 ```
 
 ### On Windows

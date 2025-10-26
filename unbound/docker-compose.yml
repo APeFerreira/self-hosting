@@ -3,8 +3,8 @@ services:
     image: alpinelinux/unbound:latest
     container_name: unbound
     ports:
-      - "5353:5353/tcp"
-      - "5353:5353/udp"
+      - "5335:5335/tcp"
+      - "5335:5335/udp"
     restart: unless-stopped
     volumes:
       - ./unbound.conf:/etc/unbound/unbound.conf

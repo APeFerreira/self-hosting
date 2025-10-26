@@ -19,7 +19,7 @@ services:
       # Set a password to access the web interface. Not setting one will result in a random password being assigned
       FTLCONF_webserver_api_password: ''
       # Uncomment next line only if you don’t plan to edit upstreams in the UI
-      # FTLCONF_dns_upstreams: '172.17.0.1#5353'
+      # FTLCONF_dns_upstreams: '172.17.0.1#5335'
       DNSMASQ_LISTENING: all          # v6 shorthand
     # Volumes store your data between container upgrades
     # **Do not mount resolv.conf**
