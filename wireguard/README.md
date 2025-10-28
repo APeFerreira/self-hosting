@@ -2,7 +2,7 @@
 
 If setting up a local network server, follow Pi-hole's [documentation](https://docs.pi-hole.net/guides/vpn/wireguard/server/) for installing Wireguard.
 
-## Cloud server
+## Oracle cloud server
 
 If setting up a cloud server, follow this [guide](https://github.com/anbuchelva/Pi-hole-and-Wireguard-on-Oracle-Cloud-always-free-tier) for installing Wireguard in an Oracle VM. Comment the lines related to Pi-hole installation if it's already installed. The commented script can be found [here](./oracle_setup.sh).
 
