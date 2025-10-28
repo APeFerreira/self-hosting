@@ -4,7 +4,7 @@ If setting up a local network server, follow Pi-hole's [documentation](https://d
 
 ## Cloud server
 
-If setting up a cloud server, follow this [guide](https://github.com/anbuchelva/Pi-hole-and-Wireguard-on-Oracle-Cloud-always-free-tier) for installing Wireguard in an Oracle VM. Comment the lines related to Pi-hole installation if it's already installed.
+If setting up a cloud server, follow this [guide](https://github.com/anbuchelva/Pi-hole-and-Wireguard-on-Oracle-Cloud-always-free-tier) for installing Wireguard in an Oracle VM. Comment the lines related to Pi-hole installation if it's already installed. The commented script can be found [here](./oracle_setup.sh).
 
 **DO NOT INSTALL WIREGUARD BY YOURSELF IF USING THE SCRIPT FROM THE GUIDE**
 
