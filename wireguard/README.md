@@ -14,7 +14,7 @@ The default configuration (which is the recommended configuration) for all VPN p
 
 ## Update Host Names (Optional Step)
 
-edit `/etc/hosts/` file to update the client names, if you wish to see the client names instead of the ip address of client devices.
+Edit `/etc/hosts/` file to update the client names, if you wish to see the client names instead of the ip address of client devices in the Pi-hole dashboard.
 
 `sudo nano /etc/hosts` would open the hosts file in edit mode.
 
