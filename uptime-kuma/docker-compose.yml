@@ -1,0 +1,12 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "3001:3001"
+    networks: [monitor-net]
+networks:
+  monitor-net:
+    external: true
