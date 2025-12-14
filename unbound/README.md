@@ -3,6 +3,11 @@
 
 ## Instructions
 
+### Create network (if not created yet)
+
+```bash
+docker network create monitor-net
+```
 
 ### Start container
 
@@ -17,6 +22,14 @@ docker compose up -d
 docker exec unbound unbound-checkconf
 ```
 
+### Discover the container's IP
+
+This IP is used when pinging from inside other containers.
+
+```bash
+docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' unbound
+```
+
 ## Test
 
 You should look for `status: NOERROR` if successful.
@@ -25,7 +38,7 @@ You should look for `status: NOERROR` if successful.
 ### On container
 
 ```bash
-dig google.com ANY @127.0.0.1 -p 5353
+dig google.com ANY @127.0.0.1 -p 5335
 ```
 
 ### On host
@@ -44,7 +57,7 @@ And look for something like `inet 172.17.0.1/16`
 #### Test
 
 ```bash
-dig google.com ANY @172.17.0.1 -p 5353
+dig google.com ANY @172.17.0.1 -p 5335
 ```
 
 ### On Windows
