@@ -12,3 +12,4 @@ A monorepo for aggregating my steps onto self-hosting. Feel free to contribute!
 - [ ] Create a full tunnel profile, so that I can update the Wireguard's [README.md](./wireguard/README.md).
 - [ ] Add Oracle setup guide
 - [ ] Use pihole with docker network modes
+- [ ] use some kind of docker networking feature not to have to hardcode ips
