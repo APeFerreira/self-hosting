@@ -83,6 +83,32 @@ Do not store the container's IP address. Docker may assign a different address
 whenever the container is recreated. This access also assumes that
 `monitor-net` uses an address inside the allowed `172.16.0.0/12` range.
 
+#### Inspect the container's Docker IP
+
+The current container IP can still be useful for temporary diagnostics, such
+as checking reachability or confirming which subnet Docker assigned to
+`monitor-net`:
+
+```bash
+docker inspect -f \
+  '{{with index .NetworkSettings.Networks "monitor-net"}}{{.IPAddress}}{{end}}' \
+  unbound
+```
+
+To display the address assigned on every network attached to the container:
+
+```bash
+docker inspect -f \
+  '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}: {{$network.IPAddress}}{{println}}{{end}}' \
+  unbound
+```
+
+This address can be used for short-lived tests from a host or container that
+has a route to `monitor-net`. It should not be saved in Pi-hole, application
+configuration, or scripts: use `unbound:5335` between containers on
+`monitor-net`, because that name remains stable when the Unbound container is
+recreated with a different IP.
+
 ### From a LAN client
 
 Direct LAN use is not enabled by the current Unbound ACL. In particular, a
