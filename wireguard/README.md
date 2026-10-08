@@ -7,73 +7,101 @@ The examples use:
 - WireGuard interface: `wg0`
 - VPN IPv4 subnet: `10.66.66.0/24`
 - VPN server address: `10.66.66.1`
-- VPN IPv6 subnet: `fd42:42:42::/64`
 - WireGuard UDP port: `51515`
 
-Replace these examples consistently if different values are selected during
-installation.
+The installer intentionally fixes the interface and IPv4 network to these
+values so server and client addresses cannot collide. IPv6 is not configured.
 
 ## Installer status and backup
 
-[`oracle_setup.sh`](./oracle_setup.sh) is the current legacy installer. The
-pre-review version has also been preserved as the non-executable
+[`oracle_setup.sh`](./oracle_setup.sh) is the reviewed installer. The legacy
+pre-review version is preserved as the non-executable
 [`oracle_setup.original.sh`](./oracle_setup.original.sh). The backup contains
 private-key generation logic but no generated keys or credentials.
 
-The `update-wireguard` branch contains a major rewrite of the installer. It
-passes Bash syntax validation and improves several areas:
+The active installer:
 
-- strict error handling and root-only file permissions;
-- modern Ubuntu and Debian package installation;
-- validation of user-provided settings;
-- `/32` and `/128` client interface addresses;
-- stateful return-traffic firewall rules;
-- `PersistentKeepalive = 25` for clients behind NAT; and
-- safer handling and messaging for client profile secrets.
+- supports current Ubuntu and Debian hosts;
+- defaults to IPv4-only split tunnels;
+- uses a fixed `10.66.66.1/24` server address and safely allocates clients;
+- shows a dry-run summary and requires typed confirmation before mutations;
+- writes the initial server configuration through an atomic staging directory;
+- installs idempotent iptables rules and removes duplicate legacy copies;
+- applies peer changes live with `wg syncconf`, without restarting `wg0`;
+- creates named clients and supports listing and revocation;
+- backs up the server configuration before every peer change; and
+- rolls back generated configuration when installation or peer application
+  fails.
 
-It has not been promoted to the active script because the review found these
-remaining concerns:
+The installer deliberately trusts authenticated WireGuard peers to access host
+services through `wg0`. It enables IPv4 forwarding and NAT so full-tunnel
+clients can reach the Internet. It refuses to run when UFW or firewalld is
+active because mixing persistent firewall managers would make rule ownership
+ambiguous.
 
-1. It always generates IPv6 routes and an IPv6 DNS server even when the VPS has
-   no working IPv6 path. The current Pi-hole Compose deployment publishes DNS
-   only on an IPv4 address, so the generated IPv6 DNS address would not answer.
-2. It permits a custom WireGuard server IPv4 address but allocates clients from
-   `.2` through `.254` without excluding the server address. A server address
-   other than the default `.1` can therefore collide with a client.
-3. Its firewall helper uses fail-fast execution across IPv4 and IPv6 commands.
-   An unsupported IPv6 operation can leave some IPv4 rules installed while
-   causing `wg-quick` startup to fail. Repeated partial starts can also create
-   duplicate rules.
-4. Client creation writes the profile and appends the server peer before
-   restarting WireGuard. A failed restart leaves a partially committed client
-   that requires manual cleanup.
-
-Treat both scripts as privileged installers: they install packages, generate
-private keys, write under `/etc/wireguard`, enable IP forwarding, modify
-iptables/ip6tables, and enable a system service. Review the active script and
-back up `/etc/wireguard` before running it on an existing server.
+Treat the script as a privileged installer: it installs packages, generates
+private keys, writes under `/etc/wireguard`, enables IPv4 forwarding, modifies
+iptables, and enables a system service. It is for a fresh installation and
+refuses to overwrite a non-empty `/etc/wireguard` directory.
 
 ## Recommended installation path
 
 ### Oracle Cloud VPS
 
-Use the provisioning and network concepts from the
-[Pi-hole and WireGuard on Oracle Cloud guide](https://github.com/anbuchelva/Pi-hole-and-Wireguard-on-Oracle-Cloud-always-free-tier),
-but do not run an Internet-downloaded setup script blindly. Pi-hole is already
-managed by Docker in this repository and should not be installed again by a
-WireGuard installer.
+Copy the installer to root's home directory and inspect a dry run:
 
-Until the candidate installer concerns above are fixed, prefer a reviewed
-manual WireGuard setup or the official distribution packages and configuration
-steps. Preserve SSH access and an existing root session while changing
-firewall rules so a mistake does not lock you out of the VPS.
+```bash
+sudo -i
+cp /path/to/self-hosting/wireguard/oracle_setup.sh /root/
+chmod 700 /root/oracle_setup.sh
+./oracle_setup.sh install --dry-run
+```
+
+The dry run asks for:
+
+- the OCI public IPv4 address or a DNS hostname used by clients;
+- the VPS interface carrying the default IPv4 route; and
+- the WireGuard UDP port, defaulting to `51515`.
+
+It displays all host changes without installing packages or writing files. If
+the summary is correct, install while keeping the existing SSH session open:
+
+```bash
+./oracle_setup.sh install
+```
+
+Type `INSTALL` only after reviewing the final summary. The script installs the
+server but does not create a client automatically.
+
+Create named split- or full-tunnel clients afterward:
+
+```bash
+./oracle_setup.sh add-client phone split --dry-run
+./oracle_setup.sh add-client phone split
+./oracle_setup.sh add-client laptop full
+./oracle_setup.sh list-clients
+```
+
+Profiles are stored in `/root/wireguard-clients`. Server configuration backups
+are stored in `/etc/wireguard/backups`. Revoke a lost or retired profile with:
+
+```bash
+./oracle_setup.sh revoke-client phone --dry-run
+./oracle_setup.sh revoke-client phone
+```
+
+The final command requires typing `REVOKE` and removes both the live peer and
+the VPS's local copy of the client profile.
 
 ### Orange Pi or another home server
 
 For a home server, follow Pi-hole's
 [WireGuard server guide](https://docs.pi-hole.net/guides/vpn/wireguard/server/).
 Give the Orange Pi a static LAN address or DHCP reservation before configuring
-router port forwarding.
+router port forwarding. The repository installer can also work on a fresh
+Ubuntu- or Debian-based Orange Pi, but it uses the same trusted-peer and direct
+iptables policy described above; inspect its dry run before choosing it over a
+manual setup.
 
 ## Opening the WireGuard port
 
@@ -117,20 +145,21 @@ WireGuard is connected, those services are reached through `10.66.66.1`.
 
 #### 2. Check the VPS firewall
 
-The reviewed installer candidate creates a direct iptables rule when `wg0`
-starts. If the server uses UFW instead, the equivalent explicit rule is:
-
-```bash
-sudo ufw allow 51515/udp comment 'WireGuard'
-sudo ufw status verbose
-```
-
-Do not mix several persistent firewall managers without understanding their
-rule ordering. Check current rules before adding another rule:
+The repository installer creates an idempotent direct iptables rule whenever
+`wg0` starts and removes it when `wg0` stops. Verify the managed rules with:
 
 ```bash
 sudo iptables -S INPUT
-sudo ip6tables -S INPUT
+sudo iptables -S FORWARD
+sudo iptables -t nat -S POSTROUTING
+```
+
+Do not add a duplicate UFW or firewalld rule. The installer refuses to proceed
+when either manager is active. If you deliberately choose a manual setup using
+UFW instead of this installer, its equivalent port rule is:
+
+```bash
+sudo ufw allow 51515/udp comment 'WireGuard'
 ```
 
 #### 3. Verify the listener and handshake
@@ -166,11 +195,14 @@ Assuming the Orange Pi is `192.168.1.10`:
    | Internal address | `192.168.1.10` |
    | Internal port | `51515` |
 
-3. If the Orange Pi runs UFW, allow the same host port:
+3. For a manual setup managed by UFW, allow the same host port:
 
    ```bash
    sudo ufw allow 51515/udp comment 'WireGuard'
    ```
+
+   Do not add this UFW rule when using `oracle_setup.sh`; that installer
+   requires UFW to be inactive and owns its direct iptables rules.
 
 4. Put the router's public IP address or a dynamic-DNS hostname in each
    client's `Endpoint`, followed by `:51515`.
@@ -227,8 +259,11 @@ AllowedIPs = 0.0.0.0/0
 ```
 
 Full tunnel also requires IP forwarding, forwarding firewall rules, and NAT on
-the server. Add `::/0` only after verifying end-to-end IPv6 routing and DNS;
-otherwise IPv6 can fail or bypass the intended tunnel policy.
+the server; the installer configures those IPv4 requirements. It does not
+configure IPv6. Do not add `::/0` to these generated profiles. A client with
+native IPv6 can still send IPv6 traffic outside an IPv4-only full tunnel, so
+disable IPv6 on that client if the policy requires all traffic to traverse the
+VPN.
 
 ## Add friendly client names
 
@@ -240,9 +275,6 @@ names instead of VPN addresses:
 10.66.66.3 android-phone
 10.66.66.4 tablet
 ```
-
-IPv6 names should be added only if IPv6 is enabled and working throughout the
-WireGuard and Pi-hole deployment.
 
 ## Protect client profiles
 
