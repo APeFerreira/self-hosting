@@ -45,15 +45,19 @@ Validate the mounted Unbound configuration before starting the long-running
 service:
 
 ```bash
-docker compose run --rm --entrypoint unbound-checkconf \
-  unbound /etc/unbound/unbound.conf
+docker compose run --rm --entrypoint /bin/sh unbound -c \
+  'unbound-anchor -a /var/lib/unbound/root.key; \
+   chown -R unbound:unbound /var/lib/unbound; \
+   exec unbound-checkconf /etc/unbound/unbound.conf'
 ```
 
 This checks syntax only. It does not prove that recursion, DNSSEC validation,
 network access, or TCP fallback works.
 
-The validation command replaces the service entrypoint, so it does not create
-or update the persistent trust anchor.
+The validation command initializes or updates the trust anchor in the same
+`unbound-state` volume used by the service. `unbound-anchor` can return status
+`1` after successfully creating or updating an anchor, so the commands are
+separated with semicolons rather than `&&`.
 
 ## Start the service
 
