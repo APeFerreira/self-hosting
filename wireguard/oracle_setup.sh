@@ -265,8 +265,8 @@ install_server() {
 	public_nic="$(ip -4 route show default | awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit } }')"
 	[[ -n ${public_nic} ]] || die "could not detect the default IPv4 interface"
 
-	read -r -p "Public IPv4 address or DNS hostname used by clients: " endpoint
-	read -r -e -i "${public_nic}" -p "Public network interface: " public_nic
+	read -r -p "Public endpoint for clients (OCI public IPv4 or DNS hostname): " endpoint
+	read -r -e -i "${public_nic}" -p "VPS default-route interface (Linux name, e.g. enp0s3): " public_nic
 	read -r -e -i "51515" -p "WireGuard UDP port: " port
 
 	validate_endpoint "${endpoint}"

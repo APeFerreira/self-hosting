@@ -57,11 +57,37 @@ chmod 700 /root/oracle_setup.sh
 ./oracle_setup.sh install --dry-run
 ```
 
-The dry run asks for:
+The dry run asks for three values:
 
-- the OCI public IPv4 address or a DNS hostname used by clients;
-- the VPS interface carrying the default IPv4 route; and
-- the WireGuard UDP port, defaulting to `51515`.
+1. **Public endpoint:** the Internet-facing address that phones and laptops use
+   to contact WireGuard. For an OCI VPS, enter the **public IPv4 address** shown
+   on the instance page in Oracle Cloud, for example `203.0.113.10`. You may
+   instead enter a DNS hostname such as `vpn.example.com`, but that name must
+   resolve to the OCI public address. This public address often does not appear
+   in `ip addr` inside the VPS because OCI maps it to the instance through NAT.
+2. **Public network interface:** the Linux interface inside the VPS that carries
+   its default IPv4 route, commonly a name such as `enp0s3`. This is an
+   interface name—not an IP address and not the OCI public address. The script
+   detects it and presents it as the default. Confirm it with:
+
+   ```bash
+   ip -4 route show default
+   ```
+
+   In output such as `default via 10.0.0.1 dev enp0s3`, enter `enp0s3`. The
+   installer uses this interface for the UDP firewall rule and for NAT when
+   full-tunnel clients access the Internet.
+3. **WireGuard UDP port:** the public and local UDP listening port, defaulting
+   to `51515`. The same destination port must be allowed in the OCI ingress
+   rule.
+
+For example, an OCI installation might use:
+
+```text
+Public endpoint:          203.0.113.10
+Public network interface: enp0s3
+WireGuard UDP port:       51515
+```
 
 It displays all host changes without installing packages or writing files. If
 the summary is correct, install while keeping the existing SSH session open:
