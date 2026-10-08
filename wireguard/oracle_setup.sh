@@ -11,12 +11,17 @@ readonly FIREWALL_DIR="${WG_DIR}/iptables"
 readonly BACKUP_DIR="${WG_DIR}/backups"
 readonly CLIENTS_DIR="/root/wireguard-clients"
 readonly SYSCTL_FILE="/etc/sysctl.d/70-wireguard-routing.conf"
+readonly FIREWALL_UNIT="/etc/systemd/system/wireguard-firewall.service"
+readonly WG_DROPIN_DIR="/etc/systemd/system/wg-quick@wg0.service.d"
+readonly WG_DROPIN_FILE="${WG_DROPIN_DIR}/firewall.conf"
 readonly SERVER_WG_NIC="wg0"
 readonly SERVER_WG_IPV4="10.66.66.1"
 readonly SERVER_WG_NETWORK="10.66.66.0/24"
 
 DRY_RUN=false
 POSITIONAL=()
+INSTALL_STAGING=""
+INSTALL_PREVIOUS_FORWARDING="0"
 
 die() {
 	echo "Error: $*" >&2
@@ -199,7 +204,35 @@ while iptables -t nat -C POSTROUTING -s ${SERVER_WG_NETWORK} -o ${public_nic} -j
 done
 EOF
 
-	chmod 700 "${start_file}" "${stop_file}"
+	# These files are read by Bash rather than executed directly. This works on
+	# hardened hosts where /etc is mounted with the noexec option.
+	chmod 600 "${start_file}" "${stop_file}"
+}
+
+write_systemd_firewall_units() {
+	local firewall_unit=$1 wg_dropin=$2
+
+	cat >"${firewall_unit}" <<EOF
+[Unit]
+Description=Firewall rules for ${SERVER_WG_NIC}
+After=network-online.target
+Before=wg-quick@${SERVER_WG_NIC}.service
+PartOf=wg-quick@${SERVER_WG_NIC}.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash ${FIREWALL_DIR}/start.sh
+ExecStop=/bin/bash ${FIREWALL_DIR}/stop.sh
+EOF
+
+	cat >"${wg_dropin}" <<EOF
+[Unit]
+Requires=wireguard-firewall.service
+After=wireguard-firewall.service
+EOF
+
+	chmod 644 "${firewall_unit}" "${wg_dropin}"
 }
 
 render_server_config() {
@@ -211,8 +244,7 @@ render_server_config() {
 Address = ${SERVER_WG_IPV4}/24
 ListenPort = ${SERVER_PORT}
 PrivateKey = $(<"${config_root}/private/server.key")
-PostUp = ${FIREWALL_DIR}/start.sh
-PostDown = ${FIREWALL_DIR}/stop.sh
+MTU = 1420
 EOF
 
 	for peer in "${config_root}/peers"/*.conf; do
@@ -238,19 +270,40 @@ rollback_install() {
 	local previous_forwarding=$1
 
 	systemctl disable --now "wg-quick@${SERVER_WG_NIC}" >/dev/null 2>&1 || true
-	[[ -x ${FIREWALL_DIR}/stop.sh ]] && "${FIREWALL_DIR}/stop.sh" >/dev/null 2>&1 || true
+	systemctl stop wireguard-firewall.service >/dev/null 2>&1 || true
+	[[ -r ${FIREWALL_DIR}/stop.sh ]] && /bin/bash "${FIREWALL_DIR}/stop.sh" >/dev/null 2>&1 || true
 	rm -f \
 		"${WG_DIR}/${SERVER_WG_NIC}.conf" \
+		"${WG_DIR}/.stripped.conf" \
 		"${WG_DIR}/70-wireguard-routing.conf" \
 		"${PRIVATE_DIR}/server.key" \
 		"${PRIVATE_DIR}/server.pub" \
 		"${FIREWALL_DIR}/start.sh" \
 		"${FIREWALL_DIR}/stop.sh" \
 		"${PARAMS_FILE}" \
-		"${SYSCTL_FILE}"
+		"${SYSCTL_FILE}" \
+		"${FIREWALL_UNIT}" \
+		"${WG_DROPIN_FILE}"
+	rmdir "${WG_DROPIN_DIR}" 2>/dev/null || true
+	rm -f \
+		"${WG_DIR}/systemd/wireguard-firewall.service" \
+		"${WG_DIR}/systemd/firewall.conf"
+	rmdir "${WG_DIR}/systemd" 2>/dev/null || true
 	rmdir "${CLIENTS_DIR}" 2>/dev/null || true
 	rmdir "${BACKUP_DIR}" "${PEERS_DIR}" "${PRIVATE_DIR}" "${FIREWALL_DIR}" "${WG_DIR}" 2>/dev/null || true
+	systemctl daemon-reload >/dev/null 2>&1 || true
 	sysctl -q -w "net.ipv4.ip_forward=${previous_forwarding}" >/dev/null 2>&1 || true
+}
+
+install_exit_cleanup() {
+	local status=$?
+	trap - EXIT
+
+	if [[ -n ${INSTALL_STAGING} && -d ${INSTALL_STAGING} ]]; then
+		rm -rf -- "${INSTALL_STAGING}"
+	fi
+	rollback_install "${INSTALL_PREVIOUS_FORWARDING}"
+	exit "${status}"
 }
 
 install_server() {
@@ -301,19 +354,16 @@ EOF
 
 	staging="$(mktemp -d /etc/.wireguard-install.XXXXXX)"
 	previous_forwarding="$(sysctl -n net.ipv4.ip_forward)"
-	install_cleanup() {
-		local status=$?
-		trap - EXIT
-		[[ -n ${staging:-} && -d ${staging} ]] && rm -rf -- "${staging}"
-		rollback_install "${previous_forwarding}"
-		exit "${status}"
-	}
-	trap install_cleanup EXIT
+	INSTALL_STAGING="${staging}"
+	INSTALL_PREVIOUS_FORWARDING="${previous_forwarding}"
+	chmod 700 "${staging}"
+	trap install_exit_cleanup EXIT
 	install -d -m 700 \
 		"${staging}/peers" \
 		"${staging}/private" \
 		"${staging}/iptables" \
-		"${staging}/backups"
+		"${staging}/backups" \
+		"${staging}/systemd"
 
 	private_key="$(wg genkey)"
 	public_key="$(printf '%s' "${private_key}" | wg pubkey)"
@@ -321,14 +371,13 @@ EOF
 	printf '%s\n' "${public_key}" >"${staging}/private/server.pub"
 	write_params "${staging}/params" "${endpoint}" "${public_nic}" "${port}" "${public_key}"
 	write_firewall_helpers "${staging}/iptables/start.sh" "${staging}/iptables/stop.sh" "${public_nic}" "${port}"
+	write_systemd_firewall_units "${staging}/systemd/wireguard-firewall.service" "${staging}/systemd/firewall.conf"
 
 	SERVER_ENDPOINT="${endpoint}"
 	SERVER_PUB_NIC="${public_nic}"
 	SERVER_PORT="${port}"
 	SERVER_PUB_KEY="${public_key}"
 	render_server_config "${staging}/${SERVER_WG_NIC}.conf" "" "" "${staging}"
-	validate_wireguard_config "${staging}/${SERVER_WG_NIC}.conf" "${staging}/stripped.conf"
-	rm -f "${staging}/stripped.conf"
 	chmod 600 \
 		"${staging}/${SERVER_WG_NIC}.conf" \
 		"${staging}/params" \
@@ -340,15 +389,32 @@ EOF
 	rmdir "${WG_DIR}" 2>/dev/null || true
 	mv "${staging}" "${WG_DIR}"
 	staging=""
+	INSTALL_STAGING=""
+	validate_wireguard_config "${WG_DIR}/${SERVER_WG_NIC}.conf" "${WG_DIR}/.stripped.conf"
+	rm -f "${WG_DIR}/.stripped.conf"
 	install -d -m 700 "${CLIENTS_DIR}"
+	install -d -m 755 "${WG_DROPIN_DIR}"
 	install -m 644 "${WG_DIR}/70-wireguard-routing.conf" "${SYSCTL_FILE}"
+	install -m 644 "${WG_DIR}/systemd/wireguard-firewall.service" "${FIREWALL_UNIT}"
+	install -m 644 "${WG_DIR}/systemd/firewall.conf" "${WG_DROPIN_FILE}"
 	rm -f "${WG_DIR}/70-wireguard-routing.conf"
+	rm -rf -- "${WG_DIR}/systemd"
+	systemctl daemon-reload
 
-	if ! sysctl -q -w net.ipv4.ip_forward=1 || ! systemctl enable --now "wg-quick@${SERVER_WG_NIC}"; then
-		die "installation failed and generated WireGuard state was rolled back; installed packages were retained"
+	if ! sysctl -q -w net.ipv4.ip_forward=1; then
+		die "could not enable IPv4 forwarding; generated WireGuard state was rolled back"
+	fi
+
+	if ! systemctl enable --now "wg-quick@${SERVER_WG_NIC}"; then
+		echo >&2
+		echo "wg-quick failed. Recent service diagnostics:" >&2
+		systemctl status "wg-quick@${SERVER_WG_NIC}" --no-pager --full >&2 || true
+		journalctl -u "wg-quick@${SERVER_WG_NIC}" -b --no-pager -n 80 >&2 || true
+		die "WireGuard startup failed and generated state was rolled back; installed packages were retained"
 	fi
 
 	trap - EXIT
+	INSTALL_PREVIOUS_FORWARDING="0"
 	echo
 	echo "WireGuard is running. Open UDP ${port} in OCI, then add a named client with:"
 	echo "  $0 add-client PHONE split"

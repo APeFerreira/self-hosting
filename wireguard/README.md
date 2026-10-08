@@ -27,6 +27,10 @@ The active installer:
 - shows a dry-run summary and requires typed confirmation before mutations;
 - writes the initial server configuration through an atomic staging directory;
 - installs idempotent iptables rules and removes duplicate legacy copies;
+- runs firewall helpers in a separate systemd oneshot service ordered before
+  `wg-quick@wg0`, avoiding Ubuntu's restricted `wg-quick` AppArmor profile;
+- fixes the server and client MTU at `1420` instead of inheriting OCI's jumbo
+  VNIC MTU for Internet tunnel traffic;
 - applies peer changes live with `wg syncconf`, without restarting `wg0`;
 - creates named clients and supports listing and revocation;
 - backs up the server configuration before every peer change; and
@@ -119,6 +123,49 @@ are stored in `/etc/wireguard/backups`. Revoke a lost or retired profile with:
 The final command requires typing `REVOKE` and removes both the live peer and
 the VPS's local copy of the client profile.
 
+#### Package-install messages and failed attempts
+
+This package message is expected and is not an error:
+
+```text
+wg-quick.target is a disabled or a static unit, not starting it.
+```
+
+The package does not start a generic interface automatically. After generating
+and validating `wg0.conf`, the installer enables the specific
+`wg-quick@wg0.service` unit.
+
+Ubuntu Resolute confines `wg-quick` with AppArmor and may deny shell processes
+launched from `PostUp` or `PostDown` hooks. This installer therefore keeps
+shell hooks out of `wg0.conf`. Its direct iptables rules run in the separate
+`wireguard-firewall.service`, which starts before `wg-quick@wg0` and stops with
+it. Do not move those commands back into WireGuard hooks on this platform.
+
+If installation fails before the final success message, do not assume the VPN
+is active. Check before retrying:
+
+```bash
+sudo systemctl is-active wg-quick@wg0
+sudo test -f /etc/wireguard/params && echo 'managed configuration exists'
+sudo find /etc -maxdepth 1 -type d -name '.wireguard-install.*' -print
+```
+
+For a `wg-quick@wg0.service` startup failure, collect the retained systemd
+diagnostics before retrying:
+
+```bash
+sudo systemctl status wg-quick@wg0 --no-pager --full
+sudo journalctl -u wg-quick@wg0 -b --no-pager -n 100
+```
+
+The installer now prints these diagnostics automatically before rolling back,
+but systemd normally retains the journal from an earlier failed attempt.
+
+Use the latest copy of `oracle_setup.sh` before retrying. Its rollback handler
+removes generated configuration and restores the previous IPv4-forwarding
+value after an installation failure. Installed Ubuntu packages are retained
+and do not need to be removed.
+
 ### Orange Pi or another home server
 
 For a home server, follow Pi-hole's
@@ -171,10 +218,12 @@ WireGuard is connected, those services are reached through `10.66.66.1`.
 
 #### 2. Check the VPS firewall
 
-The repository installer creates an idempotent direct iptables rule whenever
-`wg0` starts and removes it when `wg0` stops. Verify the managed rules with:
+The repository installer creates an idempotent direct iptables rule through
+`wireguard-firewall.service` before `wg0` starts and removes it when `wg0`
+stops. Verify the service and managed rules with:
 
 ```bash
+sudo systemctl status wireguard-firewall.service --no-pager
 sudo iptables -S INPUT
 sudo iptables -S FORWARD
 sudo iptables -t nat -S POSTROUTING
