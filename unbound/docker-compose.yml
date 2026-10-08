@@ -2,13 +2,23 @@ services:
   unbound:
     image: alpinelinux/unbound:latest
     container_name: unbound
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        unbound-anchor -a /var/lib/unbound/root.key
+        chown -R unbound:unbound /var/lib/unbound
+        exec unbound -dp
     ports:
-      - "5335:5335/tcp"
-      - "5335:5335/udp"
+      - "127.0.0.1:5335:5335/tcp"
+      - "127.0.0.1:5335:5335/udp"
     restart: unless-stopped
     volumes:
-      - ./unbound.conf:/etc/unbound/unbound.conf
+      - ./unbound.conf:/etc/unbound/unbound.conf:ro
+      - unbound-state:/var/lib/unbound
     networks: [monitor-net]
 networks:
   monitor-net:
     external: true  # the network already exists (created with `docker network create monitor-net`)
+volumes:
+  unbound-state:

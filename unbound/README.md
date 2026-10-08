@@ -6,22 +6,31 @@ The current deployment:
 
 - uses `alpinelinux/unbound:latest`;
 - listens on TCP and UDP port `5335` inside the container;
-- publishes TCP and UDP port `5335` on every host interface;
-- mounts `./unbound.conf` at `/etc/unbound/unbound.conf`;
+- publishes TCP and UDP port `5335` only on the host's IPv4 loopback address;
+- mounts `./unbound.conf` read-only at `/etc/unbound/unbound.conf`;
+- initializes and maintains a DNSSEC root trust anchor in the persistent
+  `unbound-state` volume;
+- overrides the image entrypoint so it changes ownership only within that
+  state volume, not on the host configuration file;
 - connects the container to the pre-existing external Docker network
   `monitor-net`; and
 - allows DNS clients whose source address is within `172.16.0.0/12` or
   `127.0.0.0/8`.
 
 The configuration does not currently allow clients from common
-`192.168.0.0/16` or `10.0.0.0/8` LANs, even though the published port can be
-reached through the host's network interfaces.
+`192.168.0.0/16` or `10.0.0.0/8` LANs. The published port is also bound to
+`127.0.0.1`, so it cannot be reached directly through the host's LAN or public
+interfaces.
 
 ## Prerequisites
 
 - Docker Engine with the Docker Compose plugin
 - A pre-existing `monitor-net` Docker network
 - `dig` on the host for the examples below
+
+Compose creates the `unbound-state` volume automatically. Do not remove this
+volume during routine container upgrades: it contains the RFC 5011 state used
+to maintain the DNSSEC root trust anchor.
 
 Create the external network once, if it does not already exist:
 
@@ -43,6 +52,9 @@ docker compose run --rm --entrypoint unbound-checkconf \
 This checks syntax only. It does not prove that recursion, DNSSEC validation,
 network access, or TCP fallback works.
 
+The validation command replaces the service entrypoint, so it does not create
+or update the persistent trust anchor.
+
 ## Start the service
 
 Run these commands from this directory:
@@ -63,7 +75,8 @@ docker compose exec unbound unbound-checkconf
 
 ### From the Docker host
 
-The Compose file publishes Unbound on host port `5335`, so use:
+The Compose file publishes Unbound on host port `5335` only through IPv4
+loopback, so use:
 
 ```text
 127.0.0.1:5335
@@ -111,9 +124,9 @@ recreated with a different IP.
 
 ### From a LAN client
 
-Direct LAN use is not enabled by the current Unbound ACL. In particular, a
-client whose source address is `192.168.x.x` or `10.x.x.x` will normally be
-refused.
+Direct LAN use is not enabled. The Docker port is bound only to `127.0.0.1`,
+and the Unbound ACL also refuses clients whose source address is
+`192.168.x.x` or `10.x.x.x`.
 
 Also note that Unbound is published on port `5335`, not the standard DNS port
 `53`. A command such as the following tests whatever is listening on port 53
@@ -146,8 +159,8 @@ dig @127.0.0.1 -p 5335 example.com A +tcp
 A successful basic query normally has `status: NOERROR`, but that status alone
 does not demonstrate DNSSEC validation.
 
-Once a DNSSEC trust anchor has been configured, test a valid signed domain and
-a deliberately broken signed domain:
+Test DNSSEC validation with a valid signed domain and a deliberately broken
+signed domain:
 
 ```bash
 dig @127.0.0.1 -p 5335 cloudflare.com A +dnssec
@@ -155,14 +168,31 @@ dig @127.0.0.1 -p 5335 dnssec-failed.org A +dnssec
 ```
 
 The valid response should contain the `ad` flag. The deliberately broken domain
-should return `SERVFAIL`. These expectations do not apply reliably until the
-trust-anchor problem below has been fixed.
+should return `SERVFAIL`.
+
+The service entrypoint runs `unbound-anchor` before starting Unbound. The
+resulting `/var/lib/unbound/root.key` is stored in the `unbound-state` volume
+and is referenced by `auto-trust-anchor-file` in `unbound.conf`. If the anchor
+is missing or unusable, Unbound should fail to start rather than silently run
+without the configured anchor.
 
 Avoid using `ANY` queries as a health check. Their behavior is deliberately
 restricted by many DNS implementations and they do not provide a stronger
 resolver test than a normal `A`, `AAAA`, or `SOA` query.
 
-## Known problems and risks
+## Enforced safety properties
+
+- Host publication is limited to `127.0.0.1:5335` for both TCP and UDP.
+- `unbound.conf` is mounted read-only. Container startup does not change its
+  ownership or contents on the host.
+- DNSSEC uses an automatically maintained root trust anchor stored in the
+  persistent `unbound-state` volume.
+
+These properties are intentional. If LAN access is added later, change the
+published address, exact Unbound ACL, and Docker firewall policy together. Do
+not replace the loopback binding with an unrestricted `5335:5335` mapping.
+
+## Remaining known problems and risks
 
 Severity meanings:
 
@@ -171,36 +201,6 @@ Severity meanings:
 - **Medium**: meaningful operational, security, or maintenance risk; and
 - **Low**: hardening, clarity, or maintainability issue with limited immediate
   impact.
-
-### High: no DNSSEC trust anchor is configured
-
-`unbound.conf` enables `harden-dnssec-stripped`, but it does not declare a
-`trust-anchor-file`, `auto-trust-anchor-file`, or inline trust anchor. The
-Compose bind mount replaces the image's complete `/etc/unbound/unbound.conf`,
-so packaged configuration cannot be assumed to remain active.
-
-`harden-dnssec-stripped` is not a substitute for a trust anchor. Until an anchor
-is configured and the valid/broken-domain tests above pass, this service must
-not be described as a DNSSEC-validating resolver.
-
-Possible fixes are to reference the trust-anchor file supplied by the pinned
-image, after verifying its path, or to initialize and persist a writable
-`auto-trust-anchor-file` with `unbound-anchor`.
-
-### High: the network exposure and access policy do not match
-
-The short Compose port mappings (`5335:5335`) publish DNS on all host
-interfaces, while the Unbound ACL allows only loopback and the broad Docker
-range `172.16.0.0/12`. This creates two problems:
-
-- the host exposes a DNS port on interfaces where clients will usually be
-  refused; and
-- the intended consumers and trust boundary are not explicit.
-
-Choose and document one model: host/Pi-hole-only access bound to
-`127.0.0.1:5335`, container-only access through `monitor-net`, or deliberate
-LAN access bound to a specific LAN address and protected by an exact ACL and
-firewall policy.
 
 ### High: `edns-buffer-size: 1472` is fragmentation-prone
 
@@ -241,12 +241,6 @@ the Compose file does not define or verify the external network's subnet. If
 Docker creates `monitor-net` in another private range, legitimate container
 queries will fail. Define a dedicated network with a known subnet and allow
 that exact subnet.
-
-### Low: the configuration mount is writable
-
-The container only needs to read `unbound.conf`, but the bind mount is not
-marked read-only. Add `:ro` after confirming that the image does not try to
-modify this file.
 
 ### Low: two IPv4-mapped IPv6 comments are reversed
 
