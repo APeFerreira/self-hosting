@@ -388,8 +388,29 @@ VPN.
 
 ## Add friendly client names
 
-Add client addresses to the server's `/etc/hosts` if Pi-hole should display
-names instead of VPN addresses:
+Pi-hole runs in a separate Docker container, so editing the VPS's
+`/etc/hosts` does not change the host file that Pi-hole reads. Add WireGuard
+client mappings to the `extra_hosts` section of
+`pihole/docker-compose.yml` instead:
+
+```yaml
+services:
+  pihole:
+    extra_hosts:
+      - "linux-laptop:10.66.66.2"
+      - "android-phone:10.66.66.3"
+      - "tablet:10.66.66.4"
+```
+
+Use the client name and address from `oracle_setup.sh list-clients`. Recreate
+Pi-hole after changing the mappings:
+
+```bash
+cd /path/to/self-hosting/pihole
+docker compose up -d --force-recreate
+```
+
+The resulting container `/etc/hosts` will contain entries like:
 
 ```text
 10.66.66.2 linux-laptop

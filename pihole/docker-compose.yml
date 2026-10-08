@@ -14,6 +14,11 @@ services:
       FTLCONF_dns_upstreams: "unbound#5335"
       # Required in bridge mode; host publication above remains restricted.
       FTLCONF_dns_listeningMode: "ALL"
+    # Add WireGuard client names here so Pi-hole can resolve them inside its
+    # container. Example:
+    extra_hosts:
+    #   - "linux-laptop:10.66.66.2"
+    #   - "android-phone:10.66.66.3"
     volumes:
       - pihole-data:/etc/pihole
     secrets:
