@@ -45,3 +45,5 @@ repository.
 
 - [ ] Create a full tunnel profile, so that I can update the Wireguard's [README.md](./wireguard/README.md).
 - [ ] Add Oracle setup guide
+- [ ] Check IPv6 exposure: Your VPS's sshd was listening on both 0.0.0.0:443 and [::]:443. Your IPv4 /32 restrictions do not automatically protect IPv6. Check whether Oracle assigned a public IPv6 address and whether any IPv6 ingress/firewall rules permit port 443.
+- [ ] Your persistent firewall's exact contents were never independently verified: We know both WireGuard and SSH survived the reboot. That's the important functional test. However, the complete saved rules.v4 contents were not pasted into the conversation. Keep a secure backup of your actual SSH, WireGuard and firewall configuration files if you want a reproducible disaster-recovery setup.
